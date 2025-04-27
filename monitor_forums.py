@@ -75,6 +75,7 @@ forums = {
 # Telegram bilgileri
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_IDS = os.getenv("CHAT_IDS", "").split(",")
+<<<<<<< HEAD
 
 # HTML dosyasını kaydedeceğimiz dosya adı
 HTML_FILE = "status.html"
@@ -88,21 +89,46 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     return 'Forum Tracker is Running!'
+=======
+
+# HTML dosyasını kaydedeceğimiz dosya adı
+HTML_FILE = "status.html"
+
+# Kontrol aralığı
+INTERVAL = 300  # 5 dakika
+
+# Flask uygulaması
+app = Flask(__name__)
+
+
+@app.route('/')
+def home():
+    return 'Forum Tracker is Running!'
+
+>>>>>>> 49a996d (changed)
 
 def send_telegram_message(message):
     for chat_id in CHAT_IDS:
         if chat_id.strip():
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+<<<<<<< HEAD
             payload = {
                 "chat_id": chat_id.strip(),
                 "text": message
             }
+=======
+            payload = {"chat_id": chat_id.strip(), "text": message}
+>>>>>>> 49a996d (changed)
             try:
                 response = requests.post(url, json=payload)
                 if response.status_code != 200:
                     print(f"Telegram mesajı gönderilemedi: {response.text}")
             except Exception as e:
                 print(f"Telegram gönderim hatası: {e}")
+<<<<<<< HEAD
+=======
+
+>>>>>>> 49a996d (changed)
 
 def check_forum(url, keyword):
     try:
@@ -117,6 +143,10 @@ def check_forum(url, keyword):
     except requests.exceptions.RequestException:
         return "OFFLINE ❌ (Connection Error)"
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 49a996d (changed)
 def generate_html(statuses, last_update):
     html_content = f"""<!DOCTYPE html>
 <html>
@@ -138,6 +168,10 @@ def generate_html(statuses, last_update):
 """
     with open(HTML_FILE, "w", encoding="utf-8") as f:
         f.write(html_content)
+<<<<<<< HEAD
+=======
+
+>>>>>>> 49a996d (changed)
 
 def monitor_forums():
     while True:
@@ -166,18 +200,40 @@ def monitor_forums():
 
 def git_push():
     try:
+<<<<<<< HEAD
         os.system("git config --global user.email 'onurcan.genc@ug.bilkent.edu.tr'")
         os.system("git config --global user.name 'onurcangnc'")          
         os.system("git add status.html")
         os.system('git commit -m "Auto update status page" || echo "Nothing to commit"')
         os.system("git push https://{}@github.com/onurcangnc/threat_actor_forum_tracker.git main".format(os.getenv("GITHUB_TOKEN")))
+=======
+        os.system(
+            "git config --global user.email 'onurcan.genc@ug.bilkent.edu.tr'")
+        os.system("git config --global user.name 'onurcangnc'")
+        os.system("git pull origin main --rebase")  # ⭐ YENİ EKLİYORUZ!
+        os.system("git add status.html")
+        os.system(
+            'git commit -m "Auto update status page" || echo "Nothing to commit"'
+        )
+        os.system(
+            "git push https://{}@github.com/onurcangnc/threat_actor_forum_tracker.git main"
+            .format(os.getenv("GITHUB_TOKEN")))
+>>>>>>> 49a996d (changed)
         print("✅ GitHub Pages güncellendi!")
     except Exception as e:
         print(f"Git push hatası: {e}")
 
+<<<<<<< HEAD
 def start_flask():
     app.run(host="0.0.0.0", port=8080)
 
+=======
+
+def start_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+
+>>>>>>> 49a996d (changed)
 if __name__ == "__main__":
     threading.Thread(target=monitor_forums).start()
     threading.Thread(target=start_flask).start()
