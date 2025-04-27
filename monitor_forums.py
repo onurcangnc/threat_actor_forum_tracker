@@ -1,11 +1,11 @@
 import threading
 import time
 import requests
-from flask import Flask, request, redirect, url_for, session, jsonify
+from flask import Flask
 from datetime import datetime
 import os
 
-# Tüm forumlar (senin verdiğin tam liste)
+# Tüm Forumlar Listesi
 forums = {
     "https://0x00sec.org": "0x00sec",
     "https://alligator.cash": "alligator",
@@ -72,58 +72,22 @@ forums = {
     "https://youhack.ru": "youhack"
 }
 
-# Telegram ve login için environment secrets
+# Telegram bilgileri
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_IDS = os.getenv("CHAT_IDS", "").split(",")
-USERNAME = os.getenv("TRACKER_USERNAME")
-PASSWORD = os.getenv("TRACKER_PASSWORD")
 
-# Flask secret key
-FLASK_SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "defaultsecretkey")
+# HTML dosyasını kaydedeceğimiz dosya adı
+HTML_FILE = "status.html"
 
-# Interval (saniye cinsinden) - 5 dakika
-INTERVAL = 300
-
-# Forum statusları
-forum_statuses = {}
+# Kontrol aralığı
+INTERVAL = 300  # 5 dakika
 
 # Flask uygulaması
 app = Flask(__name__)
-app.secret_key = FLASK_SECRET_KEY
 
 @app.route('/')
 def home():
-    return 'Threat Actor Forum Tracker is Running!'
-
-@app.route('/login', methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-        if username == USERNAME and password == PASSWORD:
-            session["logged_in"] = True
-            return redirect(url_for('status'))
-        else:
-            return "❌ Wrong username or password.", 401
-    return '''
-        <h2>Login</h2>
-        <form method="post">
-            Username: <input type="text" name="username" required><br><br>
-            Password: <input type="password" name="password" required><br><br>
-            <input type="submit" value="Login">
-        </form>
-    '''
-
-@app.route('/logout')
-def logout():
-    session.pop("logged_in", None)
-    return redirect(url_for('login'))
-
-@app.route('/status')
-def status():
-    if not session.get("logged_in"):
-        return redirect(url_for('login'))
-    return jsonify(forum_statuses)
+    return 'Forum Tracker is Running!'
 
 def send_telegram_message(message):
     for chat_id in CHAT_IDS:
@@ -153,8 +117,29 @@ def check_forum(url, keyword):
     except requests.exceptions.RequestException:
         return "OFFLINE ❌ (Connection Error)"
 
+def generate_html(statuses, last_update):
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Forum Status Report</title>
+</head>
+<body>
+    <h1>🛡️ Forum Status Report ({last_update})</h1>
+    <ul>
+"""
+    for url, status in statuses.items():
+        html_content += f"<li>[{status}] {url}</li>\n"
+
+    html_content += """
+    </ul>
+</body>
+</html>
+"""
+    with open(HTML_FILE, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
 def monitor_forums():
-    global forum_statuses
     while True:
         statuses = {}
         for url, keyword in forums.items():
@@ -162,18 +147,33 @@ def monitor_forums():
             print(f"[{status}] {url}")
             statuses[url] = status
 
-        forum_statuses = {
-            "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "forums": statuses
-        }
+        last_update = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        report = f"🛡️ Forum Status Report ({forum_statuses['last_update']})\n\n"
+        # HTML dosyasını oluştur
+        generate_html(statuses, last_update)
+
+        # 🚀 BURAYA BUNU EKLE:
+        git_push()
+
+        # Telegram raporu gönder
+        report = f"🛡️ Forum Status Report ({last_update})\n\n"
         for url, stat in statuses.items():
             report += f"[{stat}] {url}\n"
-
         send_telegram_message(report)
 
         time.sleep(INTERVAL)
+
+
+def git_push():
+    try:
+        os.system("git config --global user.email 'onurcan.genc@ug.bilkent.edu.tr'")
+        os.system("git config --global user.name 'onurcangnc'")          
+        os.system("git add status.html")
+        os.system('git commit -m "Auto update status page" || echo "Nothing to commit"')
+        os.system("git push https://{}@github.com/onurcangnc/threat_actor_forum_tracker.git main".format(os.getenv("GITHUB_TOKEN")))
+        print("✅ GitHub Pages güncellendi!")
+    except Exception as e:
+        print(f"Git push hatası: {e}")
 
 def start_flask():
     app.run(host="0.0.0.0", port=8080)
