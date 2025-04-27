@@ -6,8 +6,8 @@ from threading import Thread
 # ------------ CONFIG --------------
 INTERVAL = 60        # forum tarama aralığı (sn)
 PORT     = 8082      # Flask portu
-BOT_TOKEN = "7616505173:AAFQ9JAY2tdiylYBp0S9fLxG3UyPPsv2GNA"  # <-- bot token
-CHAT_ID   = "649226694"    # <-- hedef chat id
+BOT_TOKEN = ""  # <-- bot token
+CHAT_ID   = ""    # <-- hedef chat id
 # ----------------------------------
 
 forums = {
