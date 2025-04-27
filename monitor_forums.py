@@ -167,13 +167,15 @@ def monitor_forums():
 def git_push():
     try:
         os.system("git config --global user.email 'onurcan.genc@ug.bilkent.edu.tr'")
-        os.system("git config --global user.name 'onurcangnc'")          
+        os.system("git config --global user.name 'onurcangnc'")
+        os.system("git pull origin main --rebase")   # ⭐ YENİ EKLİYORUZ!
         os.system("git add status.html")
         os.system('git commit -m "Auto update status page" || echo "Nothing to commit"')
         os.system("git push https://{}@github.com/onurcangnc/threat_actor_forum_tracker.git main".format(os.getenv("GITHUB_TOKEN")))
         print("✅ GitHub Pages güncellendi!")
     except Exception as e:
         print(f"Git push hatası: {e}")
+
 
 def start_flask():
     app.run(host="0.0.0.0", port=8080)
