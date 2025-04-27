@@ -74,7 +74,7 @@ forums = {
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_IDS = os.getenv("CHAT_IDS", "").split(",")
-INTERVAL = 300
+INTERVAL = 300  # Forumları kontrol etme süresi
 
 app = Flask(__name__)
 latest_statuses = {}
@@ -83,10 +83,10 @@ latest_statuses = {}
 def home():
     html_page = """
     <!DOCTYPE html>
-    <html lang=\"en\">
+    <html lang="en">
     <head>
-        <meta charset=\"UTF-8\">
-        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Forum Status Live Tracker</title>
         <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f0f0f; color: #e0e0e0; margin: 0; padding: 20px; }
@@ -95,6 +95,7 @@ def home():
             .online { color: #00ff00; }
             .offline { color: #ff4040; }
             .possible { color: #ffd700; }
+            .waf { color: #00bfff; }
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 10px; text-align: left; border-bottom: 1px solid #333; }
             .highlight { animation: highlightAnim 1.5s ease; }
@@ -104,8 +105,8 @@ def home():
     </head>
     <body>
         <h1>🛡️ Forum Status Live Tracker</h1>
-        <div class=\"status\">
-            <table id=\"statusTable\">
+        <div class="status">
+            <table id="statusTable">
                 <thead>
                     <tr><th>Status</th><th>Forum URL</th></tr>
                 </thead>
@@ -120,11 +121,23 @@ def home():
                     const data = await response.json();
                     const tbody = document.querySelector('#statusTable tbody');
                     tbody.innerHTML = '';
+
                     let sortedEntries = Object.entries(data.statuses).sort((a, b) => {
-                        return (b[1].includes('ONLINE') ? 1 : 0) - (a[1].includes('ONLINE') ? 1 : 0);
+                        const getPriority = (status) => {
+                            if (status.includes('ONLINE')) return 3;
+                            if (status.includes('LIVE (Protected')) return 2;
+                            if (status.includes('POSSIBLY')) return 1;
+                            return 0;
+                        };
+                        return getPriority(b[1]) - getPriority(a[1]);
                     });
+
                     for (const [url, status] of sortedEntries) {
-                        let cssClass = status.includes('ONLINE') ? 'online' : (status.includes('OFFLINE') ? 'offline' : 'possible');
+                        let cssClass = 'possible';
+                        if (status.includes('ONLINE')) cssClass = 'online';
+                        else if (status.includes('LIVE (Protected')) cssClass = 'waf';
+                        else if (status.includes('OFFLINE')) cssClass = 'offline';
+
                         let highlight = previousData[url] && previousData[url] !== status ? 'highlight' : '';
                         tbody.innerHTML += `<tr class="${highlight}"><td class="${cssClass}">${status}</td><td><a href="${url}" target="_blank">${url}</a></td></tr>`;
                         previousData[url] = status;
@@ -133,7 +146,7 @@ def home():
                     console.error('Status fetch error:', error);
                 }
             }
-            setInterval(fetchStatus, 5000);
+            setInterval(fetchStatus, 1000);  // 1 saniye aralıkla güncelle
             fetchStatus();
         </script>
     </body>
@@ -151,18 +164,28 @@ def send_telegram_message(message):
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             payload = {"chat_id": chat_id.strip(), "text": message}
             try:
-                requests.post(url, json=payload)
+                response = requests.post(url, json=payload)
+                if response.status_code != 200:
+                    print(f"Telegram gönderim hatası: {response.status_code} - {response.text}")
             except Exception as e:
                 print(f"Telegram gönderim hatası: {e}")
+
 
 def check_forum(url, keyword):
     try:
         response = requests.get(url, timeout=10)
+        waf_signatures = ['access denied', 'attention required', 'checking your browser', 'forbidden', 'blocked', 'cloudflare']
+
         if response.status_code == 200:
-            if keyword.lower() in response.text.lower():
+            content = response.text.lower()
+            if any(signature in content for signature in waf_signatures):
+                return "LIVE (Protected by WAF) 🛡️"
+            elif keyword.lower() in content:
                 return "ONLINE ✅"
             else:
                 return "POSSIBLY OFFLINE ❓ (Keyword not found)"
+        elif response.status_code == 403:
+            return "LIVE (Protected by WAF) 🛡️"
         else:
             return f"OFFLINE ❌ (Status {response.status_code})"
     except requests.exceptions.RequestException:
@@ -170,6 +193,8 @@ def check_forum(url, keyword):
 
 def monitor_forums():
     global latest_statuses
+    print("[*] Forum monitor başlıyor...")  # Hemen başta yaz
+
     while True:
         statuses = {}
         for url, keyword in forums.items():
@@ -180,13 +205,22 @@ def monitor_forums():
         latest_statuses = {"last_update": last_update, "statuses": statuses}
 
         report = f"🛡️ Forum Status Report ({last_update})\n\n" + "\n".join(f"[{status}] {url}" for url, status in statuses.items())
-        send_telegram_message(report)
+
+        print(report)  # Raporu terminale bas
+        try:
+            send_telegram_message(report)
+        except Exception as e:
+            print(f"Telegram gönderim hatası (ignored): {e}")
 
         time.sleep(INTERVAL)
 
 def start_flask():
-    app.run(host="0.0.0.0", port=8081)
+    app.run(host="0.0.0.0", port=8082)
 
 if __name__ == "__main__":
-    threading.Thread(target=monitor_forums).start()
-    threading.Thread(target=start_flask).start()
+    threading.Thread(target=monitor_forums, daemon=True).start()
+    threading.Thread(target=start_flask, daemon=True).start()
+
+    while True:
+        time.sleep(1)
+
