@@ -115,70 +115,71 @@ def check_forum(url, keyword):
     except requests.exceptions.RequestException:
         return "OFFLINE ❌ (Connection Error)"
 
-        def generate_html(statuses, last_update):
-            html_content = f"""<!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <title>Forum Status Report</title>
-            <style>
-                body {{
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    background-color: #0f0f0f;
-                    color: #e0e0e0;
-                    margin: 0;
-                    padding: 20px;
-                }}
-                h1 {{
-                    text-align: center;
-                    color: #00ff99;
-                }}
-                .status {{
-                    max-width: 800px;
-                    margin: 20px auto;
-                    padding: 20px;
-                    background: #1f1f1f;
-                    border-radius: 8px;
-                    box-shadow: 0 0 10px rgba(0,255,153,0.5);
-                }}
-                .online {{ color: #00ff00; }}
-                .offline {{ color: #ff4040; }}
-                .possible {{ color: #ffd700; }}
-                ul {{
-                    list-style: none;
-                    padding: 0;
-                }}
-                li {{
-                    padding: 8px 0;
-                    border-bottom: 1px solid #333;
-                }}
-                li:last-child {{
-                    border-bottom: none;
-                }}
-            </style>
-        </head>
-        <body>
-            <h1>🛡️ Forum Status Report ({last_update})</h1>
-            <div class="status">
-                <ul>
-        """
-            for url, status in statuses.items():
-                if "ONLINE" in status:
-                    css_class = "online"
-                elif "OFFLINE" in status:
-                    css_class = "offline"
-                else:
-                    css_class = "possible"
-                html_content += f"<li class='{css_class}'>[{status}] {url}</li>\n"
 
-            html_content += """
-                </ul>
-            </div>
-        </body>
-        </html>
-        """
-            with open("index.html", "w", encoding="utf-8") as f:
-                f.write(html_content)
+def generate_html(statuses, last_update):
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Forum Status Report</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0f0f0f;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 20px;
+        }}
+        h1 {{
+            text-align: center;
+            color: #00ff99;
+        }}
+        .status {{
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1f1f1f;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,255,153,0.5);
+        }}
+        .online {{ color: #00ff00; }}
+        .offline {{ color: #ff4040; }}
+        .possible {{ color: #ffd700; }}
+        ul {{
+            list-style: none;
+            padding: 0;
+        }}
+        li {{
+            padding: 8px 0;
+            border-bottom: 1px solid #333;
+        }}
+        li:last-child {{
+            border-bottom: none;
+        }}
+    </style>
+</head>
+<body>
+    <h1>🛡️ Forum Status Report ({last_update})</h1>
+    <div class="status">
+        <ul>
+"""
+    for url, status in statuses.items():
+        if "ONLINE" in status:
+            css_class = "online"
+        elif "OFFLINE" in status:
+            css_class = "offline"
+        else:
+            css_class = "possible"
+        html_content += f"<li class='{css_class}'>[{status}] {url}</li>\n"
+
+    html_content += """
+        </ul>
+    </div>
+</body>
+</html>
+"""
+    with open(HTML_FILE, "w", encoding="utf-8") as f:
+        f.write(html_content)
 
 
 def git_push():
