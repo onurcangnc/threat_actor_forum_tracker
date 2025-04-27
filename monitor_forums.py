@@ -1,11 +1,11 @@
 import threading
 import time
 import requests
-from flask import Flask
+from flask import Flask, jsonify, render_template_string
 from datetime import datetime
 import os
 
-# Tüm Forumlar Listesi
+# Forum listesi - TAM HALİ
 forums = {
     "https://0x00sec.org": "0x00sec",
     "https://alligator.cash": "alligator",
@@ -72,22 +72,78 @@ forums = {
     "https://youhack.ru": "youhack"
 }
 
-# Telegram bilgileri
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_IDS = os.getenv("CHAT_IDS", "").split(",")
+INTERVAL = 300
 
-# HTML dosyası
-HTML_FILE = "index.html"
-INTERVAL = 300  # 5 dakika
-
-# Flask app
 app = Flask(__name__)
-
+latest_statuses = {}
 
 @app.route('/')
 def home():
-    return 'Forum Tracker is Running!'
+    html_page = """
+    <!DOCTYPE html>
+    <html lang=\"en\">
+    <head>
+        <meta charset=\"UTF-8\">
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+        <title>Forum Status Live Tracker</title>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f0f0f; color: #e0e0e0; margin: 0; padding: 20px; }
+            h1 { text-align: center; color: #00ff99; }
+            .status { max-width: 900px; margin: 20px auto; padding: 20px; background: #1f1f1f; border-radius: 8px; box-shadow: 0 0 10px rgba(0,255,153,0.5); overflow-x: auto; }
+            .online { color: #00ff00; }
+            .offline { color: #ff4040; }
+            .possible { color: #ffd700; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 10px; text-align: left; border-bottom: 1px solid #333; }
+            .highlight { animation: highlightAnim 1.5s ease; }
+            @keyframes highlightAnim { from { background-color: #004d00; } to { background-color: transparent; } }
+            @media (max-width: 600px) { body { padding: 10px; } .status { padding: 10px; } th, td { padding: 8px; } }
+        </style>
+    </head>
+    <body>
+        <h1>🛡️ Forum Status Live Tracker</h1>
+        <div class=\"status\">
+            <table id=\"statusTable\">
+                <thead>
+                    <tr><th>Status</th><th>Forum URL</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <script>
+            let previousData = {};
+            async function fetchStatus() {
+                try {
+                    const response = await fetch('/status');
+                    const data = await response.json();
+                    const tbody = document.querySelector('#statusTable tbody');
+                    tbody.innerHTML = '';
+                    let sortedEntries = Object.entries(data.statuses).sort((a, b) => {
+                        return (b[1].includes('ONLINE') ? 1 : 0) - (a[1].includes('ONLINE') ? 1 : 0);
+                    });
+                    for (const [url, status] of sortedEntries) {
+                        let cssClass = status.includes('ONLINE') ? 'online' : (status.includes('OFFLINE') ? 'offline' : 'possible');
+                        let highlight = previousData[url] && previousData[url] !== status ? 'highlight' : '';
+                        tbody.innerHTML += `<tr class="${highlight}"><td class="${cssClass}">${status}</td><td><a href="${url}" target="_blank">${url}</a></td></tr>`;
+                        previousData[url] = status;
+                    }
+                } catch (error) {
+                    console.error('Status fetch error:', error);
+                }
+            }
+            setInterval(fetchStatus, 5000);
+            fetchStatus();
+        </script>
+    </body>
+    </html>
+    """
+    return render_template_string(html_page)
 
+@app.route('/status')
+def status():
+    return jsonify(latest_statuses)
 
 def send_telegram_message(message):
     for chat_id in CHAT_IDS:
@@ -95,12 +151,9 @@ def send_telegram_message(message):
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             payload = {"chat_id": chat_id.strip(), "text": message}
             try:
-                response = requests.post(url, json=payload)
-                if response.status_code != 200:
-                    print(f"Telegram mesajı gönderilemedi: {response.text}")
+                requests.post(url, json=payload)
             except Exception as e:
                 print(f"Telegram gönderim hatası: {e}")
-
 
 def check_forum(url, keyword):
     try:
@@ -115,125 +168,24 @@ def check_forum(url, keyword):
     except requests.exceptions.RequestException:
         return "OFFLINE ❌ (Connection Error)"
 
-
-def generate_html(statuses, last_update):
-    html_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Forum Status Report</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #0f0f0f;
-            color: #e0e0e0;
-            margin: 0;
-            padding: 20px;
-        }}
-        h1 {{
-            text-align: center;
-            color: #00ff99;
-        }}
-        .status {{
-            max-width: 800px;
-            margin: 20px auto;
-            padding: 20px;
-            background: #1f1f1f;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0,255,153,0.5);
-        }}
-        .online {{ color: #00ff00; }}
-        .offline {{ color: #ff4040; }}
-        .possible {{ color: #ffd700; }}
-        ul {{
-            list-style: none;
-            padding: 0;
-        }}
-        li {{
-            padding: 8px 0;
-            border-bottom: 1px solid #333;
-        }}
-        li:last-child {{
-            border-bottom: none;
-        }}
-    </style>
-</head>
-<body>
-    <h1>🛡️ Forum Status Report ({last_update})</h1>
-    <div class="status">
-        <ul>
-"""
-    for url, status in statuses.items():
-        if "ONLINE" in status:
-            css_class = "online"
-        elif "OFFLINE" in status:
-            css_class = "offline"
-        else:
-            css_class = "possible"
-        html_content += f"<li class='{css_class}'>[{status}] {url}</li>\n"
-
-    html_content += """
-        </ul>
-    </div>
-</body>
-</html>
-"""
-    with open(HTML_FILE, "w", encoding="utf-8") as f:
-        f.write(html_content)
-
-
-def git_push():
-    try:
-        os.system(
-            "git config --global user.email 'onurcan.genc@ug.bilkent.edu.tr'")
-        os.system("git config --global user.name 'onurcangnc'")
-        os.system("git add index.html")
-        os.system(
-            'git commit -m "Auto update status page" || echo "Nothing to commit"'
-        )
-        os.system("git pull origin main --rebase")
-        os.system(
-            "git push https://{}@github.com/onurcangnc/threat_actor_forum_tracker.git main"
-            .format(os.getenv("GITHUB_TOKEN")))
-        print("✅ GitHub Pages güncellendi!")
-    except Exception as e:
-        print(f"Git push hatası: {e}")
-
-
 def monitor_forums():
+    global latest_statuses
     while True:
         statuses = {}
         for url, keyword in forums.items():
             status = check_forum(url, keyword)
-            print(f"[{status}] {url}")
             statuses[url] = status
 
         last_update = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        generate_html(statuses, last_update)
-        git_push()
+        latest_statuses = {"last_update": last_update, "statuses": statuses}
 
-        report = f"🛡️ Forum Status Report ({last_update})\n\n"
-        for url, stat in statuses.items():
-            report += f"[{stat}] {url}\n"
+        report = f"🛡️ Forum Status Report ({last_update})\n\n" + "\n".join(f"[{status}] {url}" for url, status in statuses.items())
         send_telegram_message(report)
 
         time.sleep(INTERVAL)
 
-
-def git_push():
-    try:
-        os.system("git config --global user.email 'onurcan.genc@ug.bilkent.edu.tr'")
-        os.system("git config --global user.name 'onurcangnc'")          
-        os.system("git add status.html")
-        os.system('git commit -m "Auto update status page" || echo "Nothing to commit"')
-        os.system("git push https://{}@github.com/onurcangnc/threat_actor_forum_tracker.git main".format(os.getenv("GITHUB_TOKEN")))
-        print("✅ GitHub Pages güncellendi!")
-    except Exception as e:
-        print(f"Git push hatası: {e}")
-
 def start_flask():
-    app.run(host="0.0.0.0", port=8080)
-
+    app.run(host="0.0.0.0", port=8081)
 
 if __name__ == "__main__":
     threading.Thread(target=monitor_forums).start()
