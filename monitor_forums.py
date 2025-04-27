@@ -1,11 +1,15 @@
-import threading
-import time
-import requests
+import asyncio, aiohttp
 from flask import Flask, jsonify, render_template_string
 from datetime import datetime
-import os
+from threading import Thread
 
-# Forum listesi - TAM HALİ
+# ------------ CONFIG --------------
+INTERVAL = 60        # forum tarama aralığı (sn)
+PORT     = 8082      # Flask portu
+BOT_TOKEN = "7616505173:AAFQ9JAY2tdiylYBp0S9fLxG3UyPPsv2GNA"  # <-- bot token
+CHAT_ID   = "649226694"    # <-- hedef chat id
+# ----------------------------------
+
 forums = {
     "https://0x00sec.org": "0x00sec",
     "https://alligator.cash": "alligator",
@@ -72,155 +76,108 @@ forums = {
     "https://youhack.ru": "youhack"
 }
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_IDS = os.getenv("CHAT_IDS", "").split(",")
-INTERVAL = 300  # Forumları kontrol etme süresi
+app             = Flask(__name__)
+latest_statuses = {"last_update":"","statuses":{}}
+up_times        = {u:datetime.utcnow() for u in forums}
+prev_state      = {u:"INIT" for u in forums}
 
-app = Flask(__name__)
-latest_statuses = {}
+# -------- HTML (değişmedi) --------
+HTML = """<!DOCTYPE html><html lang='en'><head>
+<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>
+<title>Forum Status Live Tracker</title>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap' rel='stylesheet'>
+<style>
+ :root{--bg:#111418;--card:#1b1f24;--border:#2c3238;--green:#16c784;--red:#ff5555;--yellow:#eab308;--cyan:#3ab7ff}
+ *{box-sizing:border-box;font-family:'Inter',sans-serif}
+ body{background:var(--bg);color:#d1d5db;margin:0;padding:24px;display:flex;flex-direction:column;align-items:center;min-height:100vh}
+ h1{color:var(--green);margin:0 0 16px;font-size:1.8rem;text-align:center}
+ .wrapper{width:100%;max-width:1000px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;box-shadow:0 0 12px rgba(0,0,0,.4)}
+ table{width:100%;border-collapse:collapse;table-layout:fixed}
+ th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left;word-break:break-all}
+ thead th{font-weight:600;color:#f3f4f6;font-size:.9rem}
+ tbody tr:hover{background:#24292f}
+ .online{color:var(--green)}
+ .offline{color:var(--red)}
+ .possible{color:var(--yellow)}
+ .waf{color:var(--cyan)}
+ a{color:#93c5fd;text-decoration:none}
+</style></head><body>
+<h1>🛡️ Forum Status Live Tracker</h1>
+<div class='wrapper'><table id='statusTable'>
+<thead><tr><th>Status</th><th>Forum URL</th><th>Uptime</th></tr></thead><tbody></tbody></table></div>
+<script>
+function pri(s){return s.includes('ONLINE')?3:s.includes('LIVE')?2:s.includes('POSSIBLY')?1:0}
+async function fetchStatus(){
+ const resp=await fetch('/status');const data=await resp.json();if(!data.statuses)return;
+ const tb=document.querySelector('#statusTable tbody');tb.innerHTML='';
+ Object.entries(data.statuses).sort((a,b)=>pri(b[1].status)-pri(a[1].status)).forEach(([url,info])=>{
+  const cls=info.status.includes('ONLINE')?'online':info.status.includes('LIVE')?'waf':info.status.includes('OFFLINE')?'offline':'possible';
+  tb.insertAdjacentHTML('beforeend',`<tr><td class='${cls}'>${info.status}</td><td><a href='${url}' target='_blank'>${url}</a></td><td>${info.uptime}</td></tr>`);
+ });
+}
+setInterval(fetchStatus,1000);fetchStatus();
+</script></body></html>"""
 
 @app.route('/')
-def home():
-    html_page = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Forum Status Live Tracker</title>
-        <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f0f0f; color: #e0e0e0; margin: 0; padding: 20px; }
-            h1 { text-align: center; color: #00ff99; }
-            .status { max-width: 900px; margin: 20px auto; padding: 20px; background: #1f1f1f; border-radius: 8px; box-shadow: 0 0 10px rgba(0,255,153,0.5); overflow-x: auto; }
-            .online { color: #00ff00; }
-            .offline { color: #ff4040; }
-            .possible { color: #ffd700; }
-            .waf { color: #00bfff; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { padding: 10px; text-align: left; border-bottom: 1px solid #333; }
-            .highlight { animation: highlightAnim 1.5s ease; }
-            @keyframes highlightAnim { from { background-color: #004d00; } to { background-color: transparent; } }
-            @media (max-width: 600px) { body { padding: 10px; } .status { padding: 10px; } th, td { padding: 8px; } }
-        </style>
-    </head>
-    <body>
-        <h1>🛡️ Forum Status Live Tracker</h1>
-        <div class="status">
-            <table id="statusTable">
-                <thead>
-                    <tr><th>Status</th><th>Forum URL</th></tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
-        <script>
-            let previousData = {};
-            async function fetchStatus() {
-                try {
-                    const response = await fetch('/status');
-                    const data = await response.json();
-                    const tbody = document.querySelector('#statusTable tbody');
-                    tbody.innerHTML = '';
-
-                    let sortedEntries = Object.entries(data.statuses).sort((a, b) => {
-                        const getPriority = (status) => {
-                            if (status.includes('ONLINE')) return 3;
-                            if (status.includes('LIVE (Protected')) return 2;
-                            if (status.includes('POSSIBLY')) return 1;
-                            return 0;
-                        };
-                        return getPriority(b[1]) - getPriority(a[1]);
-                    });
-
-                    for (const [url, status] of sortedEntries) {
-                        let cssClass = 'possible';
-                        if (status.includes('ONLINE')) cssClass = 'online';
-                        else if (status.includes('LIVE (Protected')) cssClass = 'waf';
-                        else if (status.includes('OFFLINE')) cssClass = 'offline';
-
-                        let highlight = previousData[url] && previousData[url] !== status ? 'highlight' : '';
-                        tbody.innerHTML += `<tr class="${highlight}"><td class="${cssClass}">${status}</td><td><a href="${url}" target="_blank">${url}</a></td></tr>`;
-                        previousData[url] = status;
-                    }
-                } catch (error) {
-                    console.error('Status fetch error:', error);
-                }
-            }
-            setInterval(fetchStatus, 1000);  // 1 saniye aralıkla güncelle
-            fetchStatus();
-        </script>
-    </body>
-    </html>
-    """
-    return render_template_string(html_page)
+def index():
+    return render_template_string(HTML)
 
 @app.route('/status')
 def status():
     return jsonify(latest_statuses)
 
-def send_telegram_message(message):
-    for chat_id in CHAT_IDS:
-        if chat_id.strip():
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-            payload = {"chat_id": chat_id.strip(), "text": message}
-            try:
-                response = requests.post(url, json=payload)
-                if response.status_code != 200:
-                    print(f"Telegram gönderim hatası: {response.status_code} - {response.text}")
-            except Exception as e:
-                print(f"Telegram gönderim hatası: {e}")
+async def tg(msg):
+    url=f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    async with aiohttp.ClientSession() as s:
+        await s.post(url,json={"chat_id":CHAT_ID,"text":msg})
 
-
-def check_forum(url, keyword):
+async def check(session,url,kw):
+    waf_kw=["access denied","attention required","checking your browser","forbidden","blocked","cloudflare"]
     try:
-        response = requests.get(url, timeout=10)
-        waf_signatures = ['access denied', 'attention required', 'checking your browser', 'forbidden', 'blocked', 'cloudflare']
+        async with session.get(url,timeout=10) as r:
+            t=(await r.text()).lower()
+            if any(w in t for w in waf_kw):
+                return url,"LIVE (Protected by WAF) 🛡️"
+            return (url,"ONLINE ✅") if kw.lower() in t else (url,"POSSIBLY OFFLINE ❓")
+    except:
+        return url,"OFFLINE ❌"
 
-        if response.status_code == 200:
-            content = response.text.lower()
-            if any(signature in content for signature in waf_signatures):
-                return "LIVE (Protected by WAF) 🛡️"
-            elif keyword.lower() in content:
-                return "ONLINE ✅"
-            else:
-                return "POSSIBLY OFFLINE ❓ (Keyword not found)"
-        elif response.status_code == 403:
-            return "LIVE (Protected by WAF) 🛡️"
-        else:
-            return f"OFFLINE ❌ (Status {response.status_code})"
-    except requests.exceptions.RequestException:
-        return "OFFLINE ❌ (Connection Error)"
-
-def monitor_forums():
+async def monitor():
     global latest_statuses
-    print("[*] Forum monitor başlıyor...")  # Hemen başta yaz
-
     while True:
-        statuses = {}
-        for url, keyword in forums.items():
-            status = check_forum(url, keyword)
-            statuses[url] = status
+        now = datetime.utcnow()
+        async with aiohttp.ClientSession() as s:
+            res = await asyncio.gather(*[check(s,u,k) for u,k in forums.items()])
+        st_map = {}
+        for u,st in res:
+            # uptime tracking
+            if st.startswith('ONLINE') or st.startswith('LIVE'):
+                up_times.setdefault(u,now)
+            else:
+                up_times[u]=now
 
-        last_update = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        latest_statuses = {"last_update": last_update, "statuses": statuses}
+            # --- Telegram transition logic ---
+            prev = prev_state.get(u,'INIT')
+            if prev.startswith('OFFLINE') and (st.startswith('ONLINE') or st.startswith('LIVE')):
+                await tg(f"✅ BACK ONLINE: {u} → {st}")
+            elif not prev.startswith('OFFLINE') and st.startswith('OFFLINE'):
+                await tg(f"⚠️ OFFLINE: {u}")
+            # store state
+            prev_state[u] = st
 
-        report = f"🛡️ Forum Status Report ({last_update})\n\n" + "\n".join(f"[{status}] {url}" for url, status in statuses.items())
+            st_map[u] = {"status": st, "uptime": fmt(now - up_times[u])}
 
-        print(report)  # Raporu terminale bas
-        try:
-            send_telegram_message(report)
-        except Exception as e:
-            print(f"Telegram gönderim hatası (ignored): {e}")
+        latest_statuses = {"last_update": now.strftime('%Y-%m-%d %H:%M:%S'), "statuses": st_map}
+        await asyncio.sleep(INTERVAL)
 
-        time.sleep(INTERVAL)
+# ---------------- util / main ----------------
 
-def start_flask():
-    app.run(host="0.0.0.0", port=8082)
+def fmt(d):
+    m=(d.seconds%3600)//60; h=d.seconds//3600
+    return f"{d.days}d {h}h" if d.days else (f"{h}h {m}m" if h else f"{m}m")
 
-if __name__ == "__main__":
-    threading.Thread(target=monitor_forums, daemon=True).start()
-    threading.Thread(target=start_flask, daemon=True).start()
-
-    while True:
-        time.sleep(1)
-
+if __name__=='__main__':
+    loop=asyncio.get_event_loop()
+    loop.create_task(monitor())
+    Thread(target=lambda:app.run(host='0.0.0.0',port=PORT)).start()
+    loop.run_forever()
