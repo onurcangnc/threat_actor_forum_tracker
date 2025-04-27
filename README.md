@@ -4,6 +4,17 @@ A basic background service that tracks threat actor forums based on their HTTP/H
 
 https://threat.pipelinetest.com.tr/
 
+
+## 📌 Visual Components
+
+
+### Dashboard
+![Dashboard](./assets/dashboard.png)
+
+### Filters
+![Filters](./assets/categories.png)
+
+
 ## 📌 Overview
 `threat_actor_forum_tracker` is designed to monitor the online status of underground forums. It checks whether specific forums are **online**, **protected**, or **offline** by:
 - Sending HTTP/HTTPS requests
