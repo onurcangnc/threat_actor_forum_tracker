@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🛡️ Forum Status Live Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --cyan: #06b6d4;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; font-family: 'Inter', sans-serif; }
+    body {
+      margin: 0; padding: 2rem;
+      background-color: var(--bg); color: var(--text);
+      display: flex; flex-direction: column; align-items: center;
+    }
+    h1 { font-size: 2rem; color: var(--green); margin-bottom: 1.5rem; }
+    .wrapper {
+      background-color: var(--card); padding: 1.5rem; border-radius: 0.75rem;
+      width: 100%; max-width: 1000px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      padding: 0.75rem 1rem; text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+    thead th {
+      color: var(--muted); font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    tbody tr:hover { background-color: #2c3e50; }
+    .online { color: var(--green); font-weight: 600; }
+    .offline { color: var(--red); font-weight: 600; }
+    .possible { color: var(--yellow); font-weight: 600; }
+    .waf { color: var(--cyan); font-weight: 600; }
+    a { color: #60a5fa; text-decoration: none; }
+    .footer {
+      margin-top: 2rem; font-size: 0.8rem; color: var(--muted);
+    }
+    .blink {
+      animation: blink-animation 1s steps(2, start) infinite;
+    }
+    @keyframes blink-animation {
+      to { visibility: hidden; }
+    }
+  </style>
+</head>
+<body>
+  <h1>🛡️ Forum Status Live Tracker</h1>
+  <div class="wrapper">
+    <table id="statusTable">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Forum URL</th>
+          <th>Uptime</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    &copy; 2025 ForumMonitor | Live updates with SSE
+    <br>
+    <button id="enableAudio">🔔 Turn on Notifications</button>
+  </div>
+
+  <audio id="notifSound" src="/static/notify.mp3" preload="auto"></audio>
+
+<script>
+let previousData = {}, audioEnabled = false;
+const notif = document.getElementById("notifSound");
+
+document.getElementById("enableAudio").addEventListener("click", () => {
+  notif.play().then(() => {
+    audioEnabled = true;
+    document.getElementById("enableAudio").disabled = true;
+    document.getElementById("enableAudio").innerText = "🔔 Notifications Enabled";
+  });
+});
+
+const evtSource = new EventSource("/stream");
+const table = document.querySelector('#statusTable tbody');
+
+evtSource.onmessage = function(event) {
+  const data = JSON.parse(event.data);
+  const entries = Object.entries(data);
+
+  // Sıralama: ONLINE > POSSIBLE > WAF (LIVE) > OFFLINE
+  const order = { "ONLINE": 1, "POSSIBLE": 2, "LIVE": 3, "OFFLINE": 4 };
+  const getOrder = (status) => {
+    if (status.includes("ONLINE")) return order.ONLINE;
+    if (status.includes("LIVE")) return order.LIVE;
+    if (status.includes("OFFLINE")) return order.OFFLINE;
+    return order.POSSIBLE;
+  };
+  entries.sort((a, b) => getOrder(a[1].status) - getOrder(b[1].status));
+
+  table.innerHTML = ""; // Mevcut tabloyu temizle
+
+  for (const [url, info] of entries) {
+    const statusText = info.status;
+    const cls = statusText.includes('ONLINE') ? 'online'
+                : statusText.includes('LIVE') ? 'waf'
+                : statusText.includes('OFFLINE') ? 'offline'
+                : 'possible';
+    const icon = statusText.includes('ONLINE') ? '🟢'
+                : statusText.includes('LIVE') ? '🛡️'
+                : statusText.includes('OFFLINE') ? '🔴'
+                : '🟡';
+
+    const isChanged = previousData[url] !== statusText;
+    if (isChanged && previousData[url] !== undefined && audioEnabled) notif.play();
+    previousData[url] = statusText;
+
+    const row = document.createElement('tr');
+    row.setAttribute('data-url', url);
+    row.innerHTML = `
+      <td class="${cls}">${icon} ${statusText}</td>
+      <td><a href="${url}" target="_blank">${url}</a></td>
+      <td>${info.uptime}</td>
+    `;
+    table.appendChild(row);
+  }
+};
+</script>
+
+</body>
+</html>

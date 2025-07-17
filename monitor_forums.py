@@ -1,183 +1,258 @@
+# monitor.py
 import asyncio, aiohttp
-from flask import Flask, jsonify, render_template_string
-from datetime import datetime
+from flask import Flask, jsonify, render_template_string, Response
+from datetime import datetime, timezone
 from threading import Thread
+from collections import defaultdict
+import time
+from flask import Flask, render_template
+import json
 
-# ------------ CONFIG --------------
-INTERVAL = 60        # forum tarama aralığı (sn)
-PORT     = 8082      # Flask portu
-BOT_TOKEN = ""  # <-- bot token
-CHAT_ID   = ""    # <-- hedef chat id
-# ----------------------------------
+INTERVAL = 5
+PORT = 8082
 
 forums = {
-    "https://0x00sec.org": "0x00sec",
-    "https://alligator.cash": "alligator",
+    "https://4cheat.ru/": "4cheat",
+    "https://589forum.org/": "589forum",
+    "https://alligator.cash/": "alligator",
     "https://altenens.is": "altenen",
     "https://forum.antichat.com": "antichat",
-    "https://ascarding.com": "carding",
-    "https://blackhatprotools.info": "blackhat",
-    "https://breachforums.st": "breach",
-    "https://carder-forum.online": "carder",
-    "https://cardingforum.cx": "carding",
-    "https://cardingleaks.ws": "carding",
-    "https://cardvilla.cc": "cardvilla",
-    "https://chitachok.fun": "chitachok",
-    "https://combolist.top": "combolist",
-    "https://cracked.io": "cracked",
-    "https://crackia.com": "crackia",
+    "https://antimigalki.space": "antimigalki",
+    "https://arbitraj-forum.ru": "arbitraj",
+    "https://ascarding.com": "ascarding",
+    "https://astropid.net": "astropid",
+    "https://bdfclub.com": "bdf",
+    "https://bhcforums.cc": "bhc",
+    "https://bhf.ee": "bhf",
+    "https://bhf.im": "bhf",
+    "http://bitcoinfor.ru": "bitcoinfo.ru",
+    "https://forum.bits.media": "bits.media",
+    "https://blackbiz.top": "blackbiz",
+    "https://blackbones.net": "blackbones",
+    "https://blackforums.me": "blackforums",
+    "https://blackforums.net": "blackforums",
+    "https://blackforums.ru": "blackforums",
+    "https://blackhacker.pw": "blackhacker",
+    "https://blackhatpakistan.net": "blackhatpakistan",
+    "https://www.blackhatprotools.info/": "blackhatprotools",
+    "https://blackhatworld.com": "blackhatworld",
+    "https://breached.ws": "breached",
+    "http://breached.ws": "breach",
+    "https://carders.biz": "carders.biz",
+    "https://center-club.io": "center",
+    "https://chitachok.ru": "chitachok",
+    "https://comfybox.floofey.dog": "comfybox",
+    "https://coockie.pro": "cookiepro",
+    "https://cracked.sh": "cracked",
     "https://cracking.org": "cracking",
-    "https://crackingall.com": "cracking",
-    "https://crackinghits.to": "crackinghits",
-    "https://crackingitaly.to": "crackingitaly",
-    "https://crackingx.com": "crackingx",
-    "https://crackingpro.com": "crackingpro",
-    "https://crackingshare.com": "crackingshare",
-    "https://crackx.to": "crackx",
-    "https://crime.to": "crime",
-    "https://crdcrew.cc": "crdcrew",
+    "https://crackingmafia.is": "cracking",
+    "https://www.crackingpro.com": "cracking",
+    "https://crackingx.com": "cracking",
     "https://crdpro.cc": "crdpro",
-    "https://cweb.ws": "cweb",
-    "https://cyberleaks.to": "cyberleaks",
-    "https://cybernulled.com": "cybernulled",
-    "https://darkpro.net": "darkpro",
-    "https://darkstash.com": "darkstash",
-    "https://dark-time.life": "dark-time",
-    "https://darkwebmafias.ws": "darkwebmafias",
+    "http://crime.to": "crimenetwork",
+    "http://crimenow.is": "crimenow",
+    "https://crimestate.cc": "crimestate",
+    "https://forum.cryptocurrency.tech": "cryptocurrency.tech",
+    "https://forum.cryptoff.org": "cryptoff",
+    "http://cryptogid.org": "cryptogid",
+    "https://cvvbrd.info": "cvv_board",
+    "https://cybhack.net": "cybhack",
+    "https://d4rkforums.net": "d4rkforums",
+    "https://dark2web.net": "dark2web",
+    "https://darkclub.pw": "darkclub",
+    "https://darkforum.in": "darkforum",
+    "https://darkforum.net": "darkforum",
+    "https://darkforums.st": "darkforums",
+    "https://darkmoney.lc": "darkmoney",
+    "https://darknet.ug": "darknet",
+    "https://darkpid.com": "darkpid",
+    "https://darkpro.net/": "darkpro",
+    "https://darkzone.uk": "darkzone",
+    "https://datacloud.space": "datacloud",
+    "https://dataforums.co": "dataforums",
+    "https://dedicatet.com": "dedicatet",
     "https://demonforums.net": "demonforums",
-    "https://directleaks.to": "directleaks",
     "https://drdark.ru": "drdark",
+    "https://at.dublikat.club": "dublikat.club",
+    "https://dumped.to": "dumped",
+    "https://dumpforums.to/": "dumpforums",
     "https://eleaks.to": "eleaks",
-    "https://ezcarder.cc": "ezcarder",
-    "https://leakforum.org": "leakforum",
-    "https://leakzone.net": "leakzone",
-    "https://leakedbb.com": "leakedbb",
+    "https://www.enclave.cc": "enclave",
+    "https://endway.su": "endway",
+    "https://eternia.to": "eternia",
+    "https://evilarmy.in": "evilarmy",
+    "https://evil-zone.org": "evilzone",
+    "https://evilx.su/forum/": "evilx",
+    "https://forum.exodusmarket.io": "exodus",
+    "https://exploit.in": "exploit.in",
+    "https://exploitforums.net": "exploit",
+    "https://exploits.ws": "exploits.ws",
+    "https://ezcarder.is/": "ezcarder",
+    "https://forumteam.online": "forumteam.online",
+    "https://forumteam.top": "forumteam.top",
+    "https://fssquad.com": "fssquad",
+    "https://getrekt.io": "getrekt",
+    "https://hackforums.net/index.php": "hackforums",
+    "https://hackingfather.com/": "hackingfather",
+    "https://hackonology.com/forum/": "hackonology",
+    "https://hacksnation.com/": "hacksnation",
+    "http://hohekammer.cc": "hohekammer",
+    "https://in4.bz": "in4bz",
+    "https://incidious.se": "incidious",
+    "https://infected-zone.com": "infected",
+    "https://infinity.ink": "infinity",
+    "http://kcc.cat": "kcc",
+    "https://forum.kkksec.com": "kkksecforum",
+    "http://korovka.cc": "korovka",
+    "https://korovka.cc": "korovka",
+    "https://lampeduza.la": "lampeduza",
+    "https://leadlab.top": "lead",
+    "https://leakbase.la": "leakbase",
+    "https://leakbase.org": "leakbase",
+    "https://leakforums.su": "leak",
+    "https://leaks.so": "leaks.so",
+    "https://leak.sx": "leaks.sx",
+    "https://leaky.pro/": "leaky.pro",
     "https://leech.is": "leech",
-    "https://legitcarder.ru": "legitcarder",
-    "https://legitcarders.ws": "legitcarders",
+    "https://level23hacktools.com/hackers": "level23hacktools",
+    "https://linkpass.info": "linkpass",
     "https://lolz.guru": "lolz",
-    "https://niflheim.top": "niflheim",
-    "https://noirth.com": "noirth",
-    "https://nullcrack.store": "nullcrack",
-    "https://nulled.to": "nulled",
-    "https://nulled.id": "nulledid",
-    "https://psylab.cc": "psylab",
+    "http://lowendtalk.com": "lowendtalk",
+    "https://nulledbb.com": "nulledbb",
+    "https://nulledx.to": "nulledx",
+    "https://olvx.cc": "olvx",
+    "https://omerta.cc": "omerta",
+    "https://omerta.cx": "omerta",
+    "https://omert.cc": "omerta",
+    "https://onniforums.com": "onniforums",
+    "https://openssource.org": "openssource",
+    "https://patched.to": "patched.to",
+    "https://payload.sh": "payload.sh",
+    "https://phish.pw": "phish.pw",
+    "https://phreaker.info": "phreaker",
+    "https://s1.piratebuhta.net": "piratebuhta",
+    "https://probiv.one": "probiv",
+    "https://procrd.pw": "procrd",
     "https://prologic.su": "prologic",
-    "https://russiancarder.net": "russiancarder",
-    "https://shieldforum.in": "shieldforum",
-    "https://sinfulsite.com": "sinfulsite",
-    "https://sinister.ly": "sinisterly",
-    "https://trustedsellers.ws": "trustedsellers",
-    "https://underworldmafias.net": "underworldmafias",
-    "https://validmarket.io": "validmarket",
-    "https://verifiedcarder.net": "verifiedcarder",
+    "https://proton.sc": "proton",
+    "https://pshack.org": "pshack",
+    "https://ramp4u.io": "ramp",
+    "https://rebreached.vc": "rebreached",
+    "https://reversing.center": "reversing",
+    "https://www.rf-cheats.ru": "rf-cheat",
+    "https://rootsploit.org": "rootsploit",
+    "https://darknet.rutor.nl": "rutor",
+    "http://rutor.info": "rutor",
+    "http://rutor.is": "rutor",
+    "https://seopirat.club": "seopirat",
+    "https://sinfulsite.com": "sinful",
+    "https://sinister.ly": "sinister",
+    "https://skynetzone.biz": "skynetzone.biz",
+    "https://skynetzone.pw": "skynetzone.pw",
+    "http://forum.softxaker.ru": "softxaker",
+    "https://spyhackerz.org": "spyhackerz",
+    "https://sqli.cloud": "sqli",
+    "https://stressedforums.pw": "stressed",
+    "https://thegoodlife.to": "thegoodlife",
+    "https://thejavasea.com": "thejavasea",
+    "https://toolba.se": "toolbase",
+    "https://trafa.net": "trafa",
+    "https://www.turkhackteam.org": "turkhackteam",
+    "https://vavilon.cc": "vavilon",
+    "https://vedenet.online": "vedenet",
+    "https://veryleaks.cz": "veryleaks",
+    "https://v-h.guru": "v-h.guru",
     "https://vlmi.ws": "vlmi",
+    "https://vsemmoney.com": "vsemmoney",
+    "https://wwh-club.io": "wwhclub",
+    "https://xforums.st": "xforums",
+    "https://xreactor.org": "xreactor",
     "https://xss.is": "xss",
-    "https://youhack.ru": "youhack"
+    "https://youhack.xyz": "youhack",
+    "https://zdl.pw": "zdl",
+    "https://kittyforums.to/": "kittyforums"
 }
 
-app             = Flask(__name__)
-latest_statuses = {"last_update":"","statuses":{}}
-up_times        = {u:datetime.utcnow() for u in forums}
-prev_state      = {u:"INIT" for u in forums}
+status_data = defaultdict(lambda: {
+    "status": "UNKNOWN",
+    "since": None,
+    "uptime": "NOT ACCESSIBLE"
+})
 
-# -------- HTML (değişmedi) --------
-HTML = """<!DOCTYPE html><html lang='en'><head>
-<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'>
-<title>Forum Status Live Tracker</title>
-<link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap' rel='stylesheet'>
-<style>
- :root{--bg:#111418;--card:#1b1f24;--border:#2c3238;--green:#16c784;--red:#ff5555;--yellow:#eab308;--cyan:#3ab7ff}
- *{box-sizing:border-box;font-family:'Inter',sans-serif}
- body{background:var(--bg);color:#d1d5db;margin:0;padding:24px;display:flex;flex-direction:column;align-items:center;min-height:100vh}
- h1{color:var(--green);margin:0 0 16px;font-size:1.8rem;text-align:center}
- .wrapper{width:100%;max-width:1000px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;box-shadow:0 0 12px rgba(0,0,0,.4)}
- table{width:100%;border-collapse:collapse;table-layout:fixed}
- th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left;word-break:break-all}
- thead th{font-weight:600;color:#f3f4f6;font-size:.9rem}
- tbody tr:hover{background:#24292f}
- .online{color:var(--green)}
- .offline{color:var(--red)}
- .possible{color:var(--yellow)}
- .waf{color:var(--cyan)}
- a{color:#93c5fd;text-decoration:none}
-</style></head><body>
-<h1>🛡️ Forum Status Live Tracker</h1>
-<div class='wrapper'><table id='statusTable'>
-<thead><tr><th>Status</th><th>Forum URL</th><th>Uptime</th></tr></thead><tbody></tbody></table></div>
-<script>
-function pri(s){return s.includes('ONLINE')?3:s.includes('LIVE')?2:s.includes('POSSIBLY')?1:0}
-async function fetchStatus(){
- const resp=await fetch('/status');const data=await resp.json();if(!data.statuses)return;
- const tb=document.querySelector('#statusTable tbody');tb.innerHTML='';
- Object.entries(data.statuses).sort((a,b)=>pri(b[1].status)-pri(a[1].status)).forEach(([url,info])=>{
-  const cls=info.status.includes('ONLINE')?'online':info.status.includes('LIVE')?'waf':info.status.includes('OFFLINE')?'offline':'possible';
-  tb.insertAdjacentHTML('beforeend',`<tr><td class='${cls}'>${info.status}</td><td><a href='${url}' target='_blank'>${url}</a></td><td>${info.uptime}</td></tr>`);
- });
-}
-setInterval(fetchStatus,1000);fetchStatus();
-</script></body></html>"""
-
-@app.route('/')
-def index():
-    return render_template_string(HTML)
-
-@app.route('/status')
-def status():
-    return jsonify(latest_statuses)
-
-async def tg(msg):
-    url=f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    async with aiohttp.ClientSession() as s:
-        await s.post(url,json={"chat_id":CHAT_ID,"text":msg})
-
-async def check(session,url,kw):
-    waf_kw=["access denied","attention required","checking your browser","forbidden","blocked","cloudflare"]
+async def check_status(url):
     try:
-        async with session.get(url,timeout=10) as r:
-            t=(await r.text()).lower()
-            if any(w in t for w in waf_kw):
-                return url,"LIVE (Protected by WAF) 🛡️"
-            return (url,"ONLINE ✅") if kw.lower() in t else (url,"POSSIBLY OFFLINE ❓")
-    except:
-        return url,"OFFLINE ❌"
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with session.get(url, allow_redirects=True) as resp:
+                if resp.status == 200:
+                    return "ONLINE"
+                elif resp.status in [403, 406]:
+                    return "WAF"
+                else:
+                    return "POSSIBLE"
+    except Exception:
+        return "OFFLINE"
 
-async def monitor():
-    global latest_statuses
+def format_duration(iso_since):
+    since = datetime.fromisoformat(iso_since)
+    diff = datetime.now(timezone.utc) - since
+    total = int(diff.total_seconds())
+    s = total % 60
+    m = (total // 60) % 60
+    h = (total // 3600) % 24
+    d = (total // 86400) % 30
+    mo = (total // 2592000)
+    parts = []
+    if mo: parts.append(f"{mo}ay")
+    if d: parts.append(f"{d}g")
+    if h: parts.append(f"{h}s")
+    if m: parts.append(f"{m}d")
+    if parts == [] or s: parts.append(f"{s}s")
+    return "⏱ " + " ".join(parts)
+
+async def check_forums():
     while True:
-        now = datetime.utcnow()
-        async with aiohttp.ClientSession() as s:
-            res = await asyncio.gather(*[check(s,u,k) for u,k in forums.items()])
-        st_map = {}
-        for u,st in res:
-            # uptime tracking
-            if st.startswith('ONLINE') or st.startswith('LIVE'):
-                up_times.setdefault(u,now)
+        for url in forums:
+            new_status = await check_status(url)
+            current = status_data[url]
+
+            if new_status == "OFFLINE":
+                current["status"] = "OFFLINE"
+                current["since"] = None
+                current["uptime"] = "NOT ACCESSIBLE"
+                continue
+
+            # ONLINE'e geçtiyse sayaç başlat
+            if new_status == "ONLINE" and current["status"] != "ONLINE":
+                current["since"] = datetime.now(timezone.utc).isoformat()
+
+            # since varsa uptime güncelle
+            if current["since"]:
+                current["uptime"] = format_duration(current["since"])
             else:
-                up_times[u]=now
+                current["uptime"] = "NOT ACCESSIBLE"
 
-            # --- Telegram transition logic ---
-            prev = prev_state.get(u,'INIT')
-            if prev.startswith('OFFLINE') and (st.startswith('ONLINE') or st.startswith('LIVE')):
-                await tg(f"✅ BACK ONLINE: {u} → {st}")
-            elif not prev.startswith('OFFLINE') and st.startswith('OFFLINE'):
-                await tg(f"⚠️ OFFLINE: {u}")
-            # store state
-            prev_state[u] = st
-
-            st_map[u] = {"status": st, "uptime": fmt(now - up_times[u])}
-
-        latest_statuses = {"last_update": now.strftime('%Y-%m-%d %H:%M:%S'), "statuses": st_map}
+            current["status"] = new_status
         await asyncio.sleep(INTERVAL)
 
-# ---------------- util / main ----------------
+app = Flask(__name__)
 
-def fmt(d):
-    m=(d.seconds%3600)//60; h=d.seconds//3600
-    return f"{d.days}d {h}h" if d.days else (f"{h}h {m}m" if h else f"{m}m")
+def sse_stream():
+    while True:
+        import json
+        yield f"data: {json.dumps(status_data)}\n\n"
+        time.sleep(2)
 
-if __name__=='__main__':
-    loop=asyncio.get_event_loop()
-    loop.create_task(monitor())
-    Thread(target=lambda:app.run(host='0.0.0.0',port=PORT)).start()
-    loop.run_forever()
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+@app.route("/stream")
+def stream():
+    return Response(sse_stream(), mimetype="text/event-stream")
+
+def start_loop():
+    asyncio.run(check_forums())
+
+if __name__ == "__main__":
+    Thread(target=start_loop).start()
+    app.run(host="0.0.0.0", port=PORT)
